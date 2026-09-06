@@ -1,0 +1,29 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+backend/venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Uploads / runtime data
+backend/uploads/
+sample_videos/*.mp4
+sample_videos/*.avi
+sample_videos/*.mov
+snapshots/*.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
