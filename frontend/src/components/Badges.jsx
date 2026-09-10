@@ -53,7 +53,7 @@ export function VisibilityBadge({ status }) {
 
 export function SurveillanceHealthBadge({ health }) {
   if (!health) return null
-  const status = health.status || 'OFFLINE'
+  const state = health.healthState || health.status || 'HEALTHY'
   const styles = {
     HEALTHY: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     DEGRADED: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
@@ -62,17 +62,30 @@ export function SurveillanceHealthBadge({ health }) {
   }
   return (
     <div className="inline-flex items-center gap-1.5">
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${styles[status] || styles.OFFLINE}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${status === 'HEALTHY' ? 'bg-emerald-400' : status === 'DEGRADED' ? 'bg-amber-400' : status === 'CRITICAL' ? 'bg-rose-400' : 'bg-slate-400'}`} />
-        {status}
-        {health.fps > 0 && <span className="text-[10px] font-mono opacity-80">({health.fps} FPS)</span>}
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${styles[state] || styles.OFFLINE}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${state === 'HEALTHY' ? 'bg-emerald-400' : state === 'DEGRADED' ? 'bg-amber-400' : state === 'CRITICAL' ? 'bg-rose-400' : 'bg-slate-400'}`} />
+        {state}
+        {state !== 'OFFLINE' && health.fps > 0 && <span className="text-[10px] font-mono opacity-80">({health.fps} FPS)</span>}
       </span>
-      {health.isCoverageGap && (
+      {health.coverageGap && (
         <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600/30 text-red-300 border border-red-500/40 uppercase">
-          Gap
+          Coverage Gap
         </span>
       )}
     </div>
   )
 }
+
+export function formatEventType(type) {
+  const map = {
+    'INTRUSION_DETECTED': 'Virtual Fence Intrusion',
+    'LOITERING_DETECTED': 'Perimeter Loitering Detected',
+    'UNKNOWN_PERSON': 'Unknown Person Detected',
+    'NIGHT_MOVEMENT': 'Night-time Movement Detected',
+    'POSSIBLE_INTRUSION': 'Possible Perimeter Intrusion',
+    'VEHICLE_DETECTED': 'Vehicle Detected',
+  }
+  return map[type] || (type ? type.replace(/_/g, ' ') : 'Security Incident')
+}
+
 

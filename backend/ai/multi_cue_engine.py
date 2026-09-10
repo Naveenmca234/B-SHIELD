@@ -11,7 +11,7 @@ much (spec section 41: "This makes the AI decision transparent and
 explainable.").
 """
 from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -24,6 +24,7 @@ class ThreatWeights:
     predictive_trajectory: int = 15
     loitering: int = 20
     confidence_weight: int = 10
+    audio_anomaly: int = 15
 
 
 @dataclass
@@ -42,6 +43,8 @@ class ThreatInputs:
     visibility_status: str = "CLEAR"              # CLEAR | MODERATE | POOR
     camera_risk_level: str = "MEDIUM"             # LOW | MEDIUM | HIGH
     movement_pattern: Optional[str] = None        # e.g. 'loitering', 'approaching_fence'
+    audio_anomaly: Optional[str] = None           # 'LOUD_IMPULSE_DETECTED' | 'SUSTAINED_LOUD_AUDIO' | None
+
 
 
 def severity_from_score(score: int) -> str:
@@ -130,6 +133,17 @@ def compute_threat(inputs: ThreatInputs, weights: ThreatWeights = ThreatWeights(
         score += weights.high_risk_zone
         breakdown.append({"label": "High-Risk Zone", "points": weights.high_risk_zone})
         explanation_parts.append("This camera covers a designated high-risk zone")
+
+    if inputs.audio_anomaly == "LOUD_IMPULSE_DETECTED":
+        score += weights.audio_anomaly
+        breakdown.append({"label": "Loud Audio Impulse", "points": weights.audio_anomaly})
+        explanation_parts.append("A sudden loud acoustic impulse was detected in the perimeter sector")
+    elif inputs.audio_anomaly == "SUSTAINED_LOUD_AUDIO":
+        pts = max(5, int(weights.audio_anomaly * 0.7))
+        score += pts
+        breakdown.append({"label": "Sustained Loud Audio", "points": pts})
+        explanation_parts.append("Sustained elevated acoustic noise was detected")
+
 
     # --- Poor visibility handling (never itself a critical cause) ---
     event_type = "NORMAL"

@@ -5,7 +5,6 @@ Never hardcode secrets here.
 """
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -53,6 +52,15 @@ class Settings(BaseSettings):
 
     # Optional external LLM key (not required for core functionality)
     LLM_API_KEY: str = ""
+
+    # --- External Notifications (SMTP / SMS / Webhook) ---
+    NOTIFICATION_ENABLED: bool = False
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "alerts@b-shield.internal"
+    SMS_WEBHOOK_URL: str = ""
 
 
 settings = Settings()

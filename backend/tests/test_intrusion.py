@@ -1,4 +1,3 @@
-import pytest
 from ai.intrusion import point_in_polygon, check_fence_crossing
 
 

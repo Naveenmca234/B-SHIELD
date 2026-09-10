@@ -9,7 +9,7 @@ is heading toward or will intersect configured restricted zones.
 Core policy: NEVER predicts human intent. Only projects observed physical motion.
 """
 import math
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Any
 from ai.intrusion import point_in_polygon
 
 

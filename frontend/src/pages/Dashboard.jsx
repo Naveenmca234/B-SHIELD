@@ -11,16 +11,19 @@ import CameraCard from '../components/CameraCard'
 import PerimeterMap from '../components/PerimeterMap'
 import IncidentDetail from '../components/IncidentDetail'
 import { Loading, ErrorState, EmptyState } from '../components/States'
-import { SeverityBadge, StatusBadge } from '../components/Badges'
+import { SeverityBadge, StatusBadge, formatEventType } from '../components/Badges'
 import { timeAgo } from '../components/AlertRow'
 import api from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 
 const SEVERITY_COLORS = { LOW: '#22c55e', MEDIUM: '#eab308', HIGH: '#f97316', CRITICAL: '#ef4444' }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const canAct = user?.role === 'admin' || user?.role === 'operator'
   const [stats, setStats] = useState(null)
   const [charts, setCharts] = useState(null)
   const [cameras, setCameras] = useState([])
@@ -101,12 +104,18 @@ export default function Dashboard() {
     }
   }, [on, push])
 
-  const criticalIncident = alerts.find((a) => a.severity === 'CRITICAL' && a.status !== 'RESOLVED')
+  const criticalIncident = alerts.find((a) => a.severity === 'CRITICAL' && a.status !== 'RESOLVED' && a.status !== 'FALSE_ALARM')
 
-  async function handleQuickAcknowledge(incidentId) {
+  async function handleQuickTransition(id, newStatus) {
     try {
-      await api.put(`/alerts/${incidentId}/acknowledge`)
-      push('Incident acknowledged.', 'success')
+      if (newStatus === 'ACKNOWLEDGED') {
+        await api.put(`/alerts/${id}/acknowledge`)
+      } else if (newStatus === 'RESOLVED') {
+        await api.put(`/alerts/${id}/resolve`)
+      } else {
+        await api.put(`/incidents/${id}/transition`, { status: newStatus })
+      }
+      push(`Incident updated to ${newStatus}.`, 'success')
       loadAll()
     } catch (e) {
       push(e.response?.data?.detail || 'Action failed.', 'error')
@@ -121,43 +130,79 @@ export default function Dashboard() {
       title="B-SHIELD"
       subtitle="AI-Powered Intelligent Border Surveillance (IBVAP Command Center)"
       wsStatus={wsStatus}
-      alertCount={stats?.activeAlerts}
+      alertCount={stats?.unacknowledgedAlerts ?? stats?.activeAlerts}
     >
 
       {/* Top Critical Alert Banner */}
       {criticalIncident && (
-        <div className="mb-6 p-4 rounded-xl bg-red-500/15 border-2 border-red-500/50 shadow-glow flex items-center justify-between animate-pulse">
-          <div className="flex items-center gap-3.5">
+        <div className="mb-6 p-4 rounded-xl bg-red-500/15 border-2 border-red-500/50 shadow-glow flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center text-white shrink-0">
               <ShieldAlert className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-extrabold text-white text-sm tracking-wide">
                   CRITICAL SURVEILLANCE INTRUSION
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500 text-white">
                   {criticalIncident.cameraId}
                 </span>
+                {criticalIncident.isDemoIncident && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    DEMO RECORD
+                  </span>
+                )}
+                <StatusBadge status={criticalIncident.status || 'ALERTED'} />
               </div>
-              <p className="text-xs text-red-200 mt-0.5 font-medium">
+              <div className="text-xs text-red-200 mt-0.5 font-mono">
+                {criticalIncident.incidentId || criticalIncident._id?.slice(-6)} • {criticalIncident.location || criticalIncident.cameraName || criticalIncident.cameraId} • {timeAgo(criticalIncident.createdAt || criticalIncident.timestamp)}
+              </div>
+              <p className="text-xs text-white/90 mt-1 font-medium leading-snug">
                 {criticalIncident.explanation || 'Immediate response required for high-risk perimeter intrusion.'}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => setSelectedIncident(criticalIncident)}
               className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition"
             >
               Examine Incident
             </button>
-            <button
-              onClick={() => handleQuickAcknowledge(criticalIncident._id)}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white shadow-lg transition"
-            >
-              Acknowledge
-            </button>
+            {canAct && (criticalIncident.status === 'ALERTED' || criticalIncident.status === 'DETECTED' || criticalIncident.status === 'NEW') && (
+              <button
+                onClick={() => handleQuickTransition(criticalIncident.incidentId || criticalIncident._id, 'ACKNOWLEDGED')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg transition"
+              >
+                Acknowledge
+              </button>
+            )}
+            {canAct && criticalIncident.status === 'ACKNOWLEDGED' && (
+              <>
+                <button
+                  onClick={() => handleQuickTransition(criticalIncident.incidentId || criticalIncident._id, 'RESPONDING')}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition"
+                >
+                  Dispatch Response
+                </button>
+                <button
+                  onClick={() => handleQuickTransition(criticalIncident.incidentId || criticalIncident._id, 'RESOLVED')}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg transition"
+                >
+                  Resolve
+                </button>
+              </>
+            )}
+            {canAct && criticalIncident.status === 'RESPONDING' && (
+              <button
+                onClick={() => handleQuickTransition(criticalIncident.incidentId || criticalIncident._id, 'RESOLVED')}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg transition"
+              >
+                Resolve Incident
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -169,7 +214,7 @@ export default function Dashboard() {
         <KpiCard label="Cameras Online" value={stats.onlineCameras} icon={Wifi} tone="success" />
         <KpiCard label="Degraded Feeds" value={stats.degradedCameras} icon={Activity} tone={stats.degradedCameras > 0 ? 'warning' : 'neutral'} />
         <KpiCard label="Coverage Gaps" value={stats.coverageGaps} icon={EyeOff} tone={stats.coverageGaps > 0 ? 'danger' : 'neutral'} />
-        <KpiCard label="Avg Response" value={`${stats.avgResponseTimeSeconds}s`} icon={Clock} />
+        <KpiCard label="Avg Response" value={stats.avgResponseTimeSeconds != null ? `${stats.avgResponseTimeSeconds}s` : '—'} icon={Clock} />
         <KpiCard label="Resolved Today" value={stats.incidentsResolved} icon={CheckCircle} tone="success" />
       </div>
 
@@ -209,11 +254,11 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2.5 min-w-0">
                     <SeverityBadge severity={a.severity} />
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">
-                        {a.eventType || a.alertType}
+                      <div className="text-xs font-bold text-white truncate" title={formatEventType(a.eventType || a.alertType)}>
+                        {formatEventType(a.eventType || a.alertType)}
                       </div>
                       <div className="text-[10px] text-ops-muted">
-                        {a.cameraId} • {timeAgo(a.timestamp || a.createdAt)}
+                        {a.incidentId ? `${a.incidentId} • ` : ''}{a.location || a.cameraId} • {timeAgo(a.timestamp || a.createdAt)}
                       </div>
                     </div>
                   </div>
@@ -304,6 +349,37 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Extended Analytics Row: 24h Hourly Distribution & Sector Trends */}
+      {charts && (charts.hourlyDistribution || charts.cameraDistribution) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <div className="glass-panel rounded-xl p-4">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">24-Hour Threat Distribution</h3>
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={charts.hourlyDistribution || []}>
+                <CartesianGrid stroke="#1c2438" strokeDasharray="3 3" />
+                <XAxis dataKey="hour" tick={{ fontSize: 9, fill: '#7b8499' }} interval={2} />
+                <YAxis tick={{ fontSize: 9, fill: '#7b8499' }} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: '#101627', border: '1px solid #1c2438', borderRadius: 8, fontSize: 11 }} />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="glass-panel rounded-xl p-4">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Incident Distribution by Sector / Camera</h3>
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={charts.cameraDistribution || []}>
+                <CartesianGrid stroke="#1c2438" strokeDasharray="3 3" />
+                <XAxis dataKey="camera" tick={{ fontSize: 10, fill: '#7b8499' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#7b8499' }} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: '#101627', border: '1px solid #1c2438', borderRadius: 8, fontSize: 11 }} />
+                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Incident Detail Modal with Lifecycle and SHA-256 Verification */}
       <IncidentDetail

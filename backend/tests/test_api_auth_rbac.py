@@ -1,5 +1,4 @@
 import pytest
-from datetime import timedelta
 from fastapi import HTTPException
 from services.auth_service import (
     hash_password,

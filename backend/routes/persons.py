@@ -1,5 +1,4 @@
 import base64
-import io
 from datetime import datetime
 
 import numpy as np
@@ -37,6 +36,27 @@ async def list_persons(current_user: dict = Depends(require_any)):
     return persons
 
 
+import os
+from fastapi.responses import Response
+from config import settings
+
+@router.get("/{employee_id}/photo")
+async def get_person_photo(employee_id: str):
+    person_dir = os.path.join(settings.UPLOAD_DIR, "persons")
+    photo_path = os.path.join(person_dir, f"{employee_id}.jpg")
+    if not os.path.exists(photo_path):
+        # Fallback to DB check for legacy base64 if needed
+        db = get_db()
+        if db is not None:
+            p = await db.persons.find_one({"employeeId": employee_id})
+            if p and p.get("photoUrl") and p["photoUrl"].startswith("data:"):
+                data = p["photoUrl"].split(",", 1)[1] if "," in p["photoUrl"] else p["photoUrl"]
+                return Response(content=base64.b64decode(data), media_type="image/jpeg")
+        raise HTTPException(status_code=404, detail="Photo not found")
+    with open(photo_path, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg")
+
+
 @router.post("")
 async def create_person(payload: PersonCreate, current_user: dict = Depends(require_admin)):
     db = get_db()
@@ -58,7 +78,12 @@ async def create_person(payload: PersonCreate, current_user: dict = Depends(requ
                 status_code=400,
                 detail="No face could be detected in the provided photo. Please upload a clear, front-facing consented photo.",
             )
-        photo_url = payload.photoBase64  # stored inline for demo purposes
+        # Store photo file on disk outside MongoDB
+        person_dir = os.path.join(settings.UPLOAD_DIR, "persons")
+        os.makedirs(person_dir, exist_ok=True)
+        photo_path = os.path.join(person_dir, f"{payload.employeeId}.jpg")
+        cv2.imwrite(photo_path, image)
+        photo_url = f"/persons/{payload.employeeId}/photo"
 
     doc = {
         "employeeId": payload.employeeId,
@@ -68,7 +93,7 @@ async def create_person(payload: PersonCreate, current_user: dict = Depends(requ
         "createdAt": datetime.utcnow().isoformat(),
     }
     await db.persons.insert_one(doc)
-    return {"message": "Authorized person registered", "employeeId": payload.employeeId}
+    return {"message": "Authorized person registered", "employeeId": payload.employeeId, "photoUrl": photo_url}
 
 
 @router.delete("/{employee_id}")
@@ -80,6 +105,13 @@ async def delete_person(employee_id: str, current_user: dict = Depends(require_a
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Person not found")
     face_engine.remove_face(employee_id)
+    # Remove photo file if exists
+    photo_path = os.path.join(settings.UPLOAD_DIR, "persons", f"{employee_id}.jpg")
+    if os.path.exists(photo_path):
+        try:
+            os.remove(photo_path)
+        except Exception:
+            pass
     return {"message": "Person removed"}
 
 

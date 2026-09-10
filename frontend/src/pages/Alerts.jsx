@@ -15,7 +15,7 @@ const ALERT_TYPES = [
   'UNKNOWN_PERSON', 'INTRUSION_DETECTED', 'NIGHT_MOVEMENT', 'VEHICLE_DETECTED',
   'ANPR_DETECTED', 'POSSIBLE_INTRUSION', 'VISIBILITY_DEGRADED', 'HIGH_THREAT', 'CRITICAL_THREAT',
 ]
-const STATUSES = ['NEW', 'ACKNOWLEDGED', 'RESOLVED']
+const STATUSES = ['ALERTED', 'ACKNOWLEDGED', 'RESPONDING', 'RESOLVED', 'FALSE_ALARM']
 
 export default function Alerts() {
   const [data, setData] = useState({ items: [], total: 0 })
@@ -88,8 +88,9 @@ export default function Alerts() {
   async function handleBatchAction(action) {
     if (!selectedIds.length) return
     setBatchLoading(true)
+    const targetStatus = action === 'ACKNOWLEDGE' ? 'ACKNOWLEDGED' : (action === 'RESOLVE' ? 'RESOLVED' : action)
     try {
-      await api.post('/incidents/batch-action', { incidentIds: selectedIds, action })
+      await api.post('/incidents/batch-action', { incidentIds: selectedIds, status: targetStatus, action })
       push(`Batch ${action.toLowerCase()} applied to ${selectedIds.length} incident(s).`, 'success')
       setSelectedIds([])
       load()

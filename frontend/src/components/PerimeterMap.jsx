@@ -12,13 +12,16 @@ const DEMO_COORDINATES = {
 export default function PerimeterMap({ cameras = [], activeIncidents = [], onSelectCamera }) {
   const [hoveredCam, setHoveredCam] = useState(null)
 
-  // Map cameras to positions
+  // Map cameras to positions: prioritize configured database coordinates (cam.mapX, cam.mapY)
   const mappedCameras = cameras.map((cam, idx) => {
-    const coords = DEMO_COORDINATES[cam.cameraId] || {
-      x: 20 + ((idx * 28) % 70),
-      y: 30 + ((idx * 25) % 50),
-      name: cam.name,
-    }
+    const coords = (typeof cam.mapX === 'number' && typeof cam.mapY === 'number')
+      ? { x: cam.mapX, y: cam.mapY, name: cam.name }
+      : (DEMO_COORDINATES[cam.cameraId] || {
+          x: 20 + ((idx * 28) % 70),
+          y: 30 + ((idx * 25) % 50),
+          name: cam.name,
+        })
+
     const camIncidents = activeIncidents.filter((inc) => inc.cameraId === cam.cameraId)
     const isCritical = camIncidents.some((i) => i.severity === 'CRITICAL')
     const health = cam.health?.healthState || (cam.status === 'ONLINE' ? 'HEALTHY' : 'OFFLINE')
@@ -43,7 +46,7 @@ export default function PerimeterMap({ cameras = [], activeIncidents = [], onSel
             DEMO PERIMETER
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-ops-muted">
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-ops-muted">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-green-400"></span> Healthy
           </span>
@@ -51,7 +54,10 @@ export default function PerimeterMap({ cameras = [], activeIncidents = [], onSel
             <span className="w-2 h-2 rounded-full bg-yellow-400"></span> Degraded
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-400"></span> Gap / Critical
+            <span className="w-2 h-2 rounded-full bg-slate-400"></span> Offline / Gap
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Critical
           </span>
         </div>
       </div>
@@ -84,8 +90,9 @@ export default function PerimeterMap({ cameras = [], activeIncidents = [], onSel
 
           let ringColor = 'border-green-500 bg-green-500/20 text-green-400'
           if (cam.health === 'DEGRADED') ringColor = 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
-          if (cam.health === 'CRITICAL' || cam.status === 'OFFLINE')
-            ringColor = 'border-red-500 bg-red-500/20 text-red-400'
+          if (cam.status === 'OFFLINE') ringColor = 'border-slate-500 bg-slate-500/20 text-slate-400'
+          if (cam.health === 'CRITICAL' || hasIncident)
+            ringColor = 'border-red-500 bg-red-500/20 text-red-400 animate-pulse'
 
           return (
             <div

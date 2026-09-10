@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Search } from 'lucide-react'
 import Layout from '../components/Layout'
 import { Loading, ErrorState, EmptyState } from '../components/States'
-import { SeverityBadge, StatusBadge } from '../components/Badges'
+import { SeverityBadge, StatusBadge, formatEventType } from '../components/Badges'
 import IncidentDetail from '../components/IncidentDetail'
 import { Pagination } from '../components/Common'
 import { timeAgo } from '../components/AlertRow'
@@ -92,8 +92,11 @@ export default function Events() {
                 <tbody>
                   {data.items.map((e) => (
                     <tr key={e._id} onClick={() => setSelected(e)} className="border-b border-ops-border hover:bg-white/[0.03] cursor-pointer transition-colors">
-                      <td className="px-4 py-3 text-sm font-medium text-white">{e.eventType}</td>
-                      <td className="px-4 py-3 text-sm text-ops-muted">{e.cameraId}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-white">{formatEventType(e.eventType)}</td>
+                      <td className="px-4 py-3 text-sm text-ops-muted">
+                        <div>{e.cameraName || e.cameraId}</div>
+                        {e.location && <div className="text-[11px] text-ops-subtle">{e.location}</div>}
+                      </td>
                       <td className="px-4 py-3 text-xs text-ops-muted">{timeAgo(e.timestamp)}</td>
                       <td className="px-4 py-3">{e.personStatus ? <StatusBadge status={e.personStatus} /> : <span className="text-ops-muted text-xs">—</span>}</td>
                       <td className="px-4 py-3 text-xs text-ops-muted">{e.plateNumber || e.vehicleType || '—'}</td>

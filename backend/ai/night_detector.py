@@ -6,7 +6,6 @@ Evaluates actual frame illumination to determine whether surveillance
 conditions are night/low-light, rather than relying exclusively on host system time.
 Supports recorded night CCTV clips analyzed during daytime.
 """
-from typing import Optional
 from datetime import datetime, time as dtime
 import cv2
 import numpy as np

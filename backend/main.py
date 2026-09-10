@@ -1,8 +1,6 @@
-"""
-IBVAP Backend - Intelligent Border Video Analytics Platform
-Main FastAPI application entrypoint.
-"""
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,34 +11,14 @@ from services.camera_manager import camera_manager
 from services.person_service import sync_authorized_persons_to_face_engine
 from services.offline_queue import offline_queue
 
-from routes import auth, dashboard, cameras, alerts, events, vehicles, persons, fences, settings_routes, live, ws, incidents
+from routes import auth, dashboard, cameras, alerts, events, vehicles, persons, fences, settings_routes, live, ws, incidents, system, audit
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("ibvap.main")
 
-app = FastAPI(
-    title="B-SHIELD (IBVAP) API",
-    description="AI-Powered Intelligent Border Surveillance",
-    version="1.0.0",
-)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled error on %s: %s", request.url.path, exc)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error. Please try again."})
-
-
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # 1. Verify critical security configuration
     validate_security_config()
 
@@ -58,18 +36,41 @@ async def on_startup():
     # 4. Start offline event synchronization background worker
     offline_queue.start_worker(get_db, interval_seconds=5.0)
 
-    # 5. Auto-start enabled camera pipelines
+    # 5. Auto-start enabled camera pipelines in background task
     try:
-        await camera_manager.start_all_enabled()
+        asyncio.create_task(camera_manager.start_all_enabled())
     except Exception as e:
         logger.warning("Camera auto-start skipped: %s", e)
 
+    yield
 
-@app.on_event("shutdown")
-async def on_shutdown():
+    # Shutdown sequence
     offline_queue.stop_worker()
     await camera_manager.stop_all()
     await close_mongo_connection()
+
+
+app = FastAPI(
+    title="B-SHIELD (IBVAP) API",
+    description="AI-Powered Intelligent Border Surveillance",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.FRONTEND_URL, "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error. Please try again."})
+
 
 
 @app.get("/")
@@ -82,17 +83,8 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health():
-    from database.mongodb import get_db
-    db = get_db()
-    return {
-        "service": "IBVAP API",
-        "api": "ok",
-        "database": "connected" if db is not None else "disconnected",
-    }
-
-
+app.include_router(system.router)
+app.include_router(audit.router)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(cameras.router)

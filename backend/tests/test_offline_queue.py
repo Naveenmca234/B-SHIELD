@@ -7,8 +7,6 @@ Tests the offline event queue and synchronization system:
 - Safe idempotent sync to MongoDB (no duplicate records created)
 - Mid-run DB failure fallback during incident creation
 """
-import os
-import shutil
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 

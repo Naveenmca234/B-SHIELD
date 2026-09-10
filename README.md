@@ -88,13 +88,13 @@ core UI-integrity requirement.
 
 ## 2. Tech Stack
 
-**Backend:** Python, FastAPI, WebSocket, Pydantic, JWT (python-jose), bcrypt
-(passlib), Motor (async MongoDB driver), OpenCV, pytesseract.
+**Backend:** Python 3.11, FastAPI (Lifespan context), WebSocket, Pydantic v2, JWT (python-jose), native bcrypt, Motor (async MongoDB), OpenCV, ReportLab (PDF Dossiers), pytesseract (ANPR), NumPy (FFT Audio DSP).
 
-**Frontend:** React 18, Vite, Tailwind CSS, React Router, Axios, Recharts,
-lucide-react.
+**Frontend:** React 18, Vite, Tailwind CSS, React Router, Axios, Recharts, Lucide React, i18n English/Hindi localization.
 
-**Database:** MongoDB.
+**Database:** MongoDB 6.x+.
+
+**DevOps & Deployment:** Docker multi-stage builds, Docker Compose, GitHub Actions CI, PowerShell & Bash automation scripts.
 
 ---
 
@@ -102,25 +102,34 @@ lucide-react.
 
 ```
 ibvap/
-├── frontend/                  React + Vite + Tailwind dashboard
-│   └── src/
-│       ├── components/        Sidebar, Header, cards, badges, modals, etc.
-│       ├── pages/              Login, Dashboard, Live, Alerts, Events, ...
-│       ├── context/            Auth + Toast providers
-│       ├── hooks/               useWebSocket
-│       └── services/            api.js (Axios client)
+├── frontend/                  React 18 + Vite + Tailwind dashboard
+│   ├── src/
+│   │   ├── components/        Sidebar, Header, PerimeterMap, IncidentDetail, Canvas overlays
+│   │   ├── pages/             Login, Dashboard, Live, Alerts, Events, Vehicles, Persons, Cameras, Settings
+│   │   ├── context/           Auth, Toast, and I18n providers
+│   │   ├── hooks/             useWebSocket
+│   │   └── services/          api.js (Axios client)
+│   ├── nginx.conf             Production Nginx web server config
+│   └── Dockerfile             Multi-stage build & serve container
 ├── backend/
-│   ├── main.py                 FastAPI app entrypoint
-│   ├── config.py                Environment-driven settings
-│   ├── models/                  (reserved for ORM-style models)
-│   ├── schemas/                  Pydantic request/response schemas
-│   ├── routes/                   REST endpoints (auth, cameras, alerts, ...)
-│   ├── services/                  auth, websocket manager, camera/video pipeline
-│   ├── ai/                        detector, tracker, face_recognition, anpr,
-│   │                               visibility, motion, intrusion, multi_cue_engine
-│   └── database/                   mongodb.py, seed.py
-├── sample_videos/                Place demo CCTV clips here
-├── snapshots/                     (reserved for on-disk snapshot storage)
+│   ├── main.py                FastAPI app with lifespan manager & CORS
+│   ├── config.py              Environment settings (.env)
+│   ├── routes/                REST endpoints (incidents, live, auth, cameras, alerts, ...)
+│   ├── services/              video_pipeline, pdf_service, audio_detector, notifications_service, auth_service, camera_manager
+│   ├── ai/                    multi_cue_engine, detector, tracker, face_recognition, anpr, intrusion, prediction
+│   ├── database/              mongodb.py, seed.py
+│   ├── tests/                 pytest suite (incident lifecycle, RBAC, hash verification)
+│   └── Dockerfile             Python 3.11-slim container with OpenCV & Tesseract
+├── docs/
+│   └── judge-qa.md            Technical Evaluation & Defense Q&A
+├── scripts/
+│   ├── run_demo.ps1           Windows PowerShell autonomous demo runner
+│   ├── run_demo.bat           Windows Command prompt demo launcher
+│   └── run_demo.sh            Linux / macOS Bash demo launcher
+├── .github/workflows/
+│   └── ci.yml                 GitHub Actions CI workflow
+├── docker-compose.yml         Full-stack container orchestration
+├── .dockerignore
 ├── .env.example
 └── README.md
 ```

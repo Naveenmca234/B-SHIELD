@@ -40,5 +40,9 @@ class ConnectionManager:
         for s in stale:
             self.disconnect(s)
 
+    async def broadcast_alert(self, payload: dict):
+        await self.broadcast("alert_created", payload)
+
 
 manager = ConnectionManager()
+ws_manager = manager

@@ -3,20 +3,22 @@ import {
   LayoutDashboard, Video, Bell, History, Car, Users, Camera, Settings, LogOut, ShieldHalf,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useI18n } from '../context/I18nContext'
 
 const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/live', label: 'Live Surveillance', icon: Video, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/alerts', label: 'Alerts', icon: Bell, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/events', label: 'Events', icon: History, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/vehicles', label: 'Vehicles / ANPR', icon: Car, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/persons', label: 'Persons', icon: Users, roles: ['admin', 'operator', 'viewer'] },
-  { to: '/cameras', label: 'Cameras', icon: Camera, roles: ['admin'] },
-  { to: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },
+  { to: '/dashboard', labelKey: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/live', labelKey: 'live', label: 'Live Surveillance', icon: Video, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/alerts', labelKey: 'alerts', label: 'Alerts', icon: Bell, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/events', labelKey: 'events', label: 'Events', icon: History, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/vehicles', labelKey: 'vehicles', label: 'Vehicles / ANPR', icon: Car, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/persons', labelKey: 'persons', label: 'Persons', icon: Users, roles: ['admin', 'operator', 'viewer'] },
+  { to: '/cameras', labelKey: 'cameras', label: 'Cameras', icon: Camera, roles: ['admin'] },
+  { to: '/settings', labelKey: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] },
 ]
 
 export default function Sidebar() {
   const { user, logout, hasRole } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -53,7 +55,7 @@ export default function Sidebar() {
             }
           >
             <item.icon className="w-4 h-4" />
-            {item.label}
+            {t(item.labelKey)}
           </NavLink>
         ))}
       </nav>

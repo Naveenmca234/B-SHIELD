@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Literal, Optional, List
 
 SourceType = Literal["WEBCAM", "VIDEO_FILE", "RTSP"]
@@ -25,6 +25,8 @@ class CameraCreate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     mapZone: Optional[str] = None
+    mapX: Optional[float] = None
+    mapY: Optional[float] = None
 
 
 class CameraUpdate(BaseModel):
@@ -41,6 +43,8 @@ class CameraUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     mapZone: Optional[str] = None
+    mapX: Optional[float] = None
+    mapY: Optional[float] = None
 
 
 

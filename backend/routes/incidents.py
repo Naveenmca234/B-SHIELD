@@ -4,13 +4,15 @@ incidents.py
 API router for IBVAP Incidents, Evidence Verification, and Operator Feedback.
 """
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, Header, Response, status
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, Response, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-
-from services.auth_service import require_any, require_operator, require_admin
+from services.auth_service import require_any, require_operator, pdf_export_limiter
 from services.incident_service import incident_service
 from services.evidence_service import evidence_service
+from services.pdf_service import pdf_generator
 from database.mongodb import get_db
 from services.ws_manager import manager
 
@@ -69,6 +71,131 @@ async def list_incidents(
     return {"items": items, "total": total, "page": page, "pageSize": pageSize}
 
 
+@router.get("/export/csv")
+async def export_incidents_csv(
+    current_user: dict = Depends(require_any),
+    severity: Optional[str] = None,
+    status_filter: Optional[str] = Query(None, alias="status"),
+    cameraId: Optional[str] = None,
+):
+    """Exports incidents matching filter criteria as RFC-4180 CSV."""
+    import io
+    import csv
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    query: dict = {}
+    if severity:
+        query["severity"] = severity
+    if status_filter:
+        query["status"] = status_filter
+    if cameraId:
+        query["cameraId"] = cameraId
+
+    cursor = db.incidents.find(query).sort("createdAt", -1).limit(5000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Incident ID",
+        "Created At (UTC)",
+        "Severity",
+        "Risk Score",
+        "Status",
+        "Camera ID",
+        "Event Type",
+        "Acknowledged At",
+        "Acknowledged By",
+        "Resolved At",
+        "Resolved By",
+        "Evidence Count",
+    ])
+
+    async for inc in cursor:
+        dt = inc.get("details")
+        ev_type = dt.get("event_type", "Perimeter Alert") if isinstance(dt, dict) else "Perimeter Alert"
+        writer.writerow([
+            inc.get("incidentId", ""),
+            inc.get("createdAt", ""),
+            inc.get("severity", ""),
+            inc.get("riskScore", 0),
+            inc.get("status", ""),
+            inc.get("cameraId", ""),
+            ev_type,
+            inc.get("acknowledgedAt", "") or "—",
+            inc.get("acknowledgedBy", "") or "—",
+            inc.get("resolvedAt", "") or "—",
+            inc.get("resolvedBy", "") or "—",
+            len(inc.get("evidence", [])),
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="b-shield-incidents.csv"'},
+    )
+
+
+@router.get("/evidence/gallery")
+async def get_evidence_gallery(
+    current_user: dict = Depends(require_any),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(24, ge=1, le=100),
+    cameraId: Optional[str] = None,
+):
+    """Returns paginated evidence gallery across recorded incidents."""
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    match_stage: dict = {"evidence": {"$exists": True, "$ne": []}}
+    if cameraId:
+        match_stage["cameraId"] = cameraId
+
+    pipeline = [
+        {"$match": match_stage},
+        {"$unwind": "$evidence"},
+        {"$project": {
+            "_id": 0,
+            "incidentId": "$incidentId",
+            "cameraId": "$cameraId",
+            "severity": "$severity",
+            "timestamp": "$createdAt",
+            "evidence": "$evidence",
+        }},
+        {"$sort": {"timestamp": -1}},
+        {"$skip": (page - 1) * pageSize},
+        {"$limit": pageSize},
+    ]
+
+    cursor = db.incidents.aggregate(pipeline)
+    items = []
+    async for doc in cursor:
+        ev = doc.get("evidence", {})
+        fn = ev.get("fileName") or ""
+        items.append({
+            "incidentId": doc.get("incidentId"),
+            "cameraId": doc.get("cameraId"),
+            "severity": doc.get("severity"),
+            "timestamp": ev.get("timestamp") or doc.get("timestamp"),
+            "evidenceId": ev.get("evidenceId"),
+            "sha256": ev.get("sha256"),
+            "fileSize": ev.get("fileSize"),
+            "fileName": fn,
+            "url": f"/api/incidents/evidence/file/{doc.get('incidentId')}/{fn}" if fn else None,
+        })
+
+    count_cursor = db.incidents.aggregate([
+        {"$match": match_stage},
+        {"$unwind": "$evidence"},
+        {"$count": "total"},
+    ])
+    total_doc = await count_cursor.to_list(length=1)
+    total = total_doc[0]["total"] if total_doc else 0
+
+    return {"items": items, "total": total, "page": page, "pageSize": pageSize}
+
+
 @router.get("/{incident_id}")
 async def get_incident(incident_id: str, current_user: dict = Depends(require_any)):
     db = get_db()
@@ -90,7 +217,55 @@ async def get_incident(incident_id: str, current_user: dict = Depends(require_an
     return incident
 
 
+@router.get("/{incident_id}/report.pdf")
+async def get_incident_pdf_report(
+    incident_id: str,
+    request: Request,
+    current_user: dict = Depends(require_any),
+):
+    """
+    Generate an official, tamper-evident PDF dossier for the specified incident.
+    Protected with rate limiting.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    pdf_export_limiter.check(client_ip)
+
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    incident = await db.incidents.find_one({"incidentId": incident_id})
+    if not incident:
+        from bson import ObjectId
+        try:
+            incident = await db.incidents.find_one({"_id": ObjectId(incident_id)})
+        except Exception:
+            pass
+
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+
+    incident["_id"] = str(incident["_id"])
+    pdf_buffer = pdf_generator.generate_incident_report(
+        incident=incident,
+        requested_by=current_user.get("username", "operator"),
+        role=current_user.get("role", "operator"),
+    )
+
+    filename = f"Incident_{incident.get('incidentId', incident_id)}_Dossier.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
+
+
+
 @router.put("/{incident_id}/transition")
+@router.post("/{incident_id}/transition")
 async def transition_incident(
     incident_id: str,
     payload: TransitionRequest,
@@ -114,6 +289,7 @@ async def transition_incident(
 
 
 @router.post("/batch-transition")
+@router.post("/batch-action")
 async def batch_transition(
     payload: BatchTransitionRequest,
     current_user: dict = Depends(require_operator),
@@ -121,12 +297,21 @@ async def batch_transition(
     """Batch acknowledge or resolve multiple alerts/incidents safely."""
     db = get_db()
     results = []
+    # Normalize action to status if action is provided
+    target_status = payload.status
+    if hasattr(payload, "action") and not target_status:
+        target_status = getattr(payload, "action")
+    if target_status == "ACKNOWLEDGE":
+        target_status = "ACKNOWLEDGED"
+    elif target_status == "RESOLVE":
+        target_status = "RESOLVED"
+
     for inc_id in payload.incidentIds:
         try:
-            upd = await incident_service.transition_incident(
+            await incident_service.transition_incident(
                 db=db,
                 incident_id=inc_id,
-                new_status=payload.status,
+                new_status=target_status,
                 username=current_user["username"],
                 user_role=current_user["role"],
                 reason=payload.reason or "Batch operator action.",
@@ -136,11 +321,11 @@ async def batch_transition(
             results.append({"incidentId": inc_id, "status": "FAILED", "error": str(e)})
 
     await manager.broadcast("incidents_batch_updated", {
-        "status": payload.status,
+        "status": target_status,
         "updatedBy": current_user["username"],
         "count": len(payload.incidentIds),
     })
-    return {"results": results, "status": payload.status}
+    return {"results": results, "status": target_status}
 
 
 @router.post("/{incident_id}/feedback")
@@ -186,10 +371,23 @@ async def verify_evidence_hash(
     if not evidence_match:
         raise HTTPException(status_code=404, detail="Evidence item not found in this incident.")
 
-    result = evidence_service.verify_evidence(
-        rel_path=evidence_match["relativePath"],
-        stored_hash=evidence_match["sha256"],
-    )
+    try:
+        result = evidence_service.verify_evidence(
+            rel_path=evidence_match["relativePath"],
+            stored_hash=evidence_match["sha256"],
+        )
+    except HTTPException as e:
+        if e.status_code == 404:
+            result = {
+                "status": "FILE_NOT_FOUND",
+                "computedHash": None,
+                "storedHash": evidence_match["sha256"],
+                "verifiedAt": datetime.now(timezone.utc).isoformat(),
+                "tampered": True,
+                "error": "Evidence file not found on disk.",
+            }
+        else:
+            raise
 
     # Record access audit log
     await evidence_service.log_access(

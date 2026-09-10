@@ -14,7 +14,9 @@ const EMPTY_FORM = {
   cameraId: '', name: '', location: '', sourceType: 'WEBCAM', rtspUrl: '', videoFile: '',
   riskLevel: 'MEDIUM', nightStart: '18:30', nightEnd: '06:00', enabled: true,
   latitude: '', longitude: '', mapZone: '',
+  mapX: '', mapY: '',
 }
+
 
 
 export default function Cameras() {
@@ -157,6 +159,8 @@ function CameraForm({ open, onClose, camera, onSaved }) {
       latitude: camera.latitude !== undefined && camera.latitude !== null ? camera.latitude : '',
       longitude: camera.longitude !== undefined && camera.longitude !== null ? camera.longitude : '',
       mapZone: camera.mapZone || '',
+      mapX: camera.mapX !== undefined && camera.mapX !== null ? camera.mapX : '',
+      mapY: camera.mapY !== undefined && camera.mapY !== null ? camera.mapY : '',
     } : EMPTY_FORM)
   }, [camera, open])
 
@@ -233,6 +237,12 @@ function CameraForm({ open, onClose, camera, onSaved }) {
         </FormField>
         <FormField label="Perimeter Sector / Map Zone" full>
           <input value={form.mapZone} onChange={(e) => update('mapZone', e.target.value)} placeholder="e.g. Sector-Alpha-North" className="input" />
+        </FormField>
+        <FormField label="Map Grid X % (0 - 100)">
+          <input type="number" step="any" min="0" max="100" value={form.mapX} onChange={(e) => update('mapX', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 45.0" className="input" />
+        </FormField>
+        <FormField label="Map Grid Y % (0 - 100)">
+          <input type="number" step="any" min="0" max="100" value={form.mapY} onChange={(e) => update('mapY', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 30.0" className="input" />
         </FormField>
         <FormField label="Enabled" full>
           <label className="flex items-center gap-2 text-sm text-ops-text">

@@ -1,10 +1,7 @@
-import pytest
 import numpy as np
 from ai.anpr import (
     locate_plate_region,
-    preprocess_plate,
     process_vehicle_for_plate,
-    TESSERACT_AVAILABLE,
 )
 
 

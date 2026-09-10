@@ -9,7 +9,7 @@ Calculates real response and resolution metrics and logs feedback.
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from fastapi import HTTPException, status
 
 logger = logging.getLogger("ibvap.incidents")
@@ -234,6 +234,21 @@ class IncidentService:
         updated = await db.incidents.find_one({"incidentId": incident.get("incidentId")})
         if updated and "_id" in updated:
             updated["_id"] = str(updated["_id"])
+
+        try:
+            from services.audit_service import record_audit_event
+            await record_audit_event(
+                db=db,
+                user={"username": username, "role": user_role},
+                action=f"INCIDENT_{new_status}",
+                target_type="INCIDENT",
+                target_id=incident.get("incidentId"),
+                result="SUCCESS",
+                metadata={"previous_status": current_status, "new_status": new_status, "reason": reason},
+            )
+        except Exception:
+            pass
+
         return updated
 
     async def record_feedback(
@@ -282,6 +297,20 @@ class IncidentService:
                 "incidentId": incident_id,
                 **feedback_entry,
             })
+
+        try:
+            from services.audit_service import record_audit_event
+            await record_audit_event(
+                db=db,
+                user={"username": operator, "role": "operator"},
+                action="INCIDENT_FEEDBACK",
+                target_type="INCIDENT",
+                target_id=incident_id,
+                result="SUCCESS",
+                metadata={"classification": classification, "reason": reason},
+            )
+        except Exception:
+            pass
 
         return {"status": "RECORDED", "message": "Feedback recorded successfully", "feedback": feedback_entry}
 

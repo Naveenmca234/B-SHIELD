@@ -1,5 +1,4 @@
 import time
-import pytest
 from services.health_service import evaluate_camera_health
 
 

@@ -28,10 +28,39 @@ async def login(payload: LoginRequest, request: Request):
     user = await db.users.find_one({"username": payload.username})
     if not user or not verify_password(payload.password, user.get("passwordHash", "")):
         login_rate_limiter.record_failure(payload.username, client_ip)
+        try:
+            from services.audit_service import record_audit_event
+            await record_audit_event(
+                db=db,
+                user=None,
+                action="LOGIN",
+                target_type="USER",
+                target_id=payload.username,
+                result="FAILURE",
+                ip_address=client_ip,
+                failure_reason="Invalid credentials",
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
     login_rate_limiter.record_success(payload.username, client_ip)
     token = create_access_token({"sub": user["username"], "role": user["role"]})
+
+    try:
+        from services.audit_service import record_audit_event
+        await record_audit_event(
+            db=db,
+            user={"username": user["username"], "role": user["role"], "_id": str(user["_id"])},
+            action="LOGIN",
+            target_type="USER",
+            target_id=user["username"],
+            result="SUCCESS",
+            ip_address=client_ip,
+        )
+    except Exception:
+        pass
+
     return TokenResponse(
         access_token=token,
         user=UserOut(username=user["username"], role=user["role"], fullName=user.get("fullName")),
@@ -39,8 +68,22 @@ async def login(payload: LoginRequest, request: Request):
 
 
 @router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user)):
-    # Stateless JWT - logout is handled client-side by discarding the token.
+async def logout(request: Request, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    try:
+        from services.audit_service import record_audit_event
+        await record_audit_event(
+            db=db,
+            user=current_user,
+            action="LOGOUT",
+            target_type="USER",
+            target_id=current_user.get("username"),
+            result="SUCCESS",
+            ip_address=client_ip,
+        )
+    except Exception:
+        pass
     return {"message": "Logged out successfully"}
 
 

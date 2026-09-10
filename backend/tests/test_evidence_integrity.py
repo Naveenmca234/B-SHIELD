@@ -4,7 +4,6 @@ import numpy as np
 from fastapi import HTTPException
 from services.evidence_service import (
     calculate_sha256,
-    calculate_file_sha256,
     _safe_resolve_path,
     EvidenceService,
 )

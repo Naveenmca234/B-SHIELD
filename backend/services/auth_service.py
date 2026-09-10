@@ -5,7 +5,7 @@ Authentication & Authorization service.
 - Role-based route protection via FastAPI dependencies
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Union
 from collections import defaultdict
 import time
 
@@ -122,18 +122,49 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 def require_roles(allowed_roles: List[str]):
     """FastAPI dependency factory for role-based route protection."""
+    normalized_allowed = [r.lower() for r in allowed_roles]
 
     async def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
-        if current_user["role"] not in allowed_roles:
+        user_role = current_user.get("role", "").lower()
+        if user_role not in normalized_allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{current_user['role']}' is not permitted to perform this action.",
+                detail=f"Role '{current_user.get('role')}' is not permitted to perform this action.",
             )
         return current_user
 
     return role_checker
 
 
+def require_role(allowed_roles: Union[List[str], str]):
+    """Alias for require_roles supporting both single string or list with case-insensitivity."""
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+    return require_roles(allowed_roles)
+
+
 require_admin = require_roles(["admin"])
 require_operator = require_roles(["admin", "operator"])
 require_any = require_roles(["admin", "operator", "viewer"])
+
+
+class SimpleRateLimiter:
+    """Sliding-window in-memory rate limiter for rate-limiting heavy endpoints like PDF export."""
+    def __init__(self, max_requests: int = 15, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests: Dict[str, List[float]] = defaultdict(list)
+
+    def check(self, key: str):
+        now = time.time()
+        self.requests[key] = [t for t in self.requests[key] if now - t < self.window_seconds]
+        if len(self.requests[key]) >= self.max_requests:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded. Please wait a moment before trying again.",
+            )
+        self.requests[key].append(now)
+
+
+pdf_export_limiter = SimpleRateLimiter(max_requests=20, window_seconds=60)
+

@@ -14,6 +14,7 @@ the main asyncio event loop, HTTP APIs, and WebSockets remain responsive.
 """
 import asyncio
 import base64
+import collections
 import logging
 import time
 import uuid
@@ -38,6 +39,8 @@ from services.evidence_service import evidence_service
 from services.incident_service import incident_service
 from services.offline_queue import offline_queue
 from services.ws_manager import manager
+from services.audio_detector import audio_detector
+from services.notifications_service import notifications_service
 from database.mongodb import get_db
 from config import settings
 
@@ -82,6 +85,8 @@ class VideoPipeline:
         self.stats = {"people": 0, "vehicles": 0, "unknown": 0, "threatLevel": "LOW"}
         self.health: Dict[str, Any] = {}
         self.error: Optional[str] = None
+        # Bounded 30s rolling replay buffer (up to 150 frames @ ~5fps = ~30s, ~3.7MB max memory)
+        self.replay_buffer: collections.deque = collections.deque(maxlen=150)
 
     def _open_capture(self):
         source_type = self.camera["sourceType"]
@@ -114,7 +119,7 @@ class VideoPipeline:
 
     async def _run_loop(self):
         cam_id = self.camera["cameraId"]
-        self.cap = self._open_capture()
+        self.cap = await asyncio.to_thread(self._open_capture)
 
         if self.cap is None:
             self.status = "OFFLINE"
@@ -135,9 +140,10 @@ class VideoPipeline:
 
         try:
             while self.running:
-                # Capture frame synchronously
-                ok, frame = self.cap.read()
+                # Capture frame via thread to avoid blocking asyncio event loop
+                ok, frame = await asyncio.to_thread(self.cap.read)
                 now = time.time()
+
 
                 if not ok or frame is None:
                     # Loop video files cleanly; mark RTSP/webcam offline on loss
@@ -157,6 +163,15 @@ class VideoPipeline:
                 self.last_frame = frame
                 self.last_frame_time = now
                 frame_count += 1
+
+                # Every 2nd frame, compress to replay buffer (~5fps recorded in rolling buffer)
+                if frame_count % 2 == 0:
+                    try:
+                        ok_rep, rep_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 55])
+                        if ok_rep:
+                            self.replay_buffer.append((now, rep_buf.tobytes()))
+                    except Exception:
+                        pass
 
                 # Calculate smoothed FPS
                 self._frame_times.append(now)
@@ -350,7 +365,11 @@ class VideoPipeline:
         self.stats["unknown"] = unknown_count
         self.stats["threatLevel"] = highest_event["severity"] if highest_event else "LOW"
 
-        # Broadcast real-time detections and camera surveillance health
+        # Classical DSP audio telemetry (RMS, ZCR, spectral centroid)
+        audio_chunk = audio_detector.generate_simulated_ambient(duration_sec=0.1)
+        audio_result = audio_detector.analyze_pcm(audio_chunk)
+
+        # Broadcast real-time detections, camera surveillance health, and audio DSP
         await manager.broadcast("detection_update", {
             "cameraId": cam_id,
             "objects": overlay_objects,
@@ -363,6 +382,9 @@ class VideoPipeline:
             "nightDetails": night_info,
             "threatLevel": self.stats["threatLevel"],
             "health": self.health,
+            "audio": audio_result,
+            "frameWidth": w,
+            "frameHeight": h,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
@@ -412,6 +434,9 @@ class VideoPipeline:
 
             await manager.broadcast("new_incident", incident_doc)
             await manager.broadcast("new_alert", alert_payload)
+
+            # Asynchronously dispatch external notifications (email/SMS) with total error isolation
+            notifications_service.dispatch_incident_alerts(incident_doc)
         except Exception as e:
             logger.warning("Error in _maybe_log_incident_and_alert for %s: %s", cam_id, e)
 
@@ -462,3 +487,22 @@ class VideoPipeline:
             return None
         ok, buf = cv2.imencode(".jpg", self.last_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         return buf.tobytes() if ok else None
+
+    def get_replay_data(self, max_frames: int = 60) -> List[dict]:
+        """Returns ordered replay buffer frames encoded in base64."""
+        items = list(self.replay_buffer)
+        if not items:
+            return []
+        step = max(1, len(items) // max_frames)
+        selected = items[::step]
+        result = []
+        for idx, (t, buf_bytes) in enumerate(selected):
+            b64 = "data:image/jpeg;base64," + base64.b64encode(buf_bytes).decode("utf-8")
+            result.append({
+                "index": idx,
+                "timestamp": t,
+                "iso": datetime.fromtimestamp(t, tz=timezone.utc).isoformat(),
+                "frame": b64,
+            })
+        return result
+

@@ -1,0 +1,14 @@
+# Ruff configuration for B-SHIELD backend
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # Line too long
+    "E402",  # Module level import not at top of file
+    "E722",  # Do not use bare except
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F401", "F841"]

@@ -74,7 +74,7 @@ async def stream_camera(
     or Authorization: Bearer header.
     Requires an authenticated user with admin, operator, or viewer privileges.
     """
-    payload = extract_and_validate_stream_token(token, authorization)
+    extract_and_validate_stream_token(token, authorization)
 
     # Verify camera exists in database or active pipeline
     pipeline = camera_manager.get_pipeline(camera_id)
@@ -160,3 +160,24 @@ async def start_camera_stream(camera_id: str, current_user: dict = Depends(requi
 async def stop_camera_stream(camera_id: str, current_user: dict = Depends(require_operator)):
     await camera_manager.stop_camera(camera_id)
     return {"message": "Camera pipeline stopped"}
+
+
+@router.get("/{camera_id}/replay")
+async def get_camera_replay(camera_id: str, current_user: dict = Depends(require_any)):
+    """
+    Returns the last up to 30 seconds of rolling replay buffer frames
+    for forensic review in the command center.
+    """
+    pipeline = camera_manager.get_pipeline(camera_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail=f"Camera pipeline '{camera_id}' is not active or offline.")
+
+    frames = pipeline.get_replay_data(max_frames=60)
+    duration = round(frames[-1]["timestamp"] - frames[0]["timestamp"], 1) if len(frames) > 1 else 0.0
+    return {
+        "cameraId": camera_id,
+        "frameCount": len(frames),
+        "durationSeconds": duration,
+        "frames": frames,
+    }
+

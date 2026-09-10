@@ -3,7 +3,7 @@ import tempfile
 import pytest
 import numpy as np
 from fastapi import HTTPException
-from services.evidence_service import EvidenceService, calculate_sha256, calculate_file_sha256, _safe_resolve_path
+from services.evidence_service import EvidenceService, calculate_sha256, _safe_resolve_path
 
 
 def test_calculate_sha256():

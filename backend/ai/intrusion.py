@@ -7,7 +7,7 @@ resolution independent). Uses a real point-in-polygon test (ray casting)
 against the bottom-center point of a tracked object's bounding box (the
 object's "feet" position, standard practice in surveillance systems).
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 def point_in_polygon(x: float, y: float, polygon: List[Dict[str, float]]) -> bool:

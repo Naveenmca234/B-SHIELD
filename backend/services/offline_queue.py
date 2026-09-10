@@ -158,4 +158,5 @@ class OfflineEventQueue:
 
 
 offline_queue = OfflineEventQueue()
+offline_event_queue = offline_queue
 

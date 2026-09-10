@@ -1,7 +1,6 @@
 import pytest
-from datetime import datetime, timedelta
 from fastapi import HTTPException
-from services.incident_service import IncidentService, ALLOWED_TRANSITIONS, calculate_duration_seconds
+from services.incident_service import IncidentService, calculate_duration_seconds
 
 
 class MockAsyncCollection:

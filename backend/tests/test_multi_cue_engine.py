@@ -1,5 +1,4 @@
-import pytest
-from ai.multi_cue_engine import ThreatInputs, ThreatWeights, compute_threat, severity_from_score
+from ai.multi_cue_engine import ThreatInputs, compute_threat, severity_from_score
 
 
 def test_compute_threat_zero_inputs():

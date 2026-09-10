@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 from ai.night_detector import detect_night_condition, _is_clock_night
 

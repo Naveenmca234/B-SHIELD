@@ -58,14 +58,26 @@ async def get_stats(current_user: dict = Depends(require_any)):
     if resolved_count == 0:
         resolved_count = await db.alerts.count_documents({"status": "RESOLVED"})
 
-    # Average response time from incidents collection
+    # Unacknowledged alerts for notification count
+    unacknowledged_alerts = await db.incidents.count_documents({"status": {"$in": ["ALERTED", "DETECTED"]}})
+    if unacknowledged_alerts == 0:
+        unacknowledged_alerts = await db.alerts.count_documents({"status": {"$in": ["NEW", "ALERTED", "DETECTED"]}})
+
+    # Average response time from incidents collection (returns None if no records exist)
     avg_pipeline = [
         {"$match": {"responseTimeSeconds": {"$ne": None}}},
         {"$group": {"_id": None, "avgResponse": {"$avg": "$responseTimeSeconds"}}},
     ]
-    avg_cursor = db.incidents.aggregate(avg_pipeline)
-    avg_docs = [doc async for doc in avg_cursor]
-    avg_response_time = round(avg_docs[0]["avgResponse"], 1) if avg_docs else 0.0
+    try:
+        avg_cursor = db.incidents.aggregate(avg_pipeline)
+        if hasattr(avg_cursor, "to_list"):
+            avg_docs = await avg_cursor.to_list(length=10)
+        else:
+            avg_docs = [doc async for doc in avg_cursor]
+    except Exception:
+        avg_docs = []
+    avg_val = avg_docs[0].get("avgResponse") if avg_docs else None
+    avg_response_time = round(avg_val, 1) if avg_val is not None else None
 
     return {
         "totalCameras": total_cameras,
@@ -76,6 +88,8 @@ async def get_stats(current_user: dict = Depends(require_any)):
         "vehiclesDetected": vehicles_detected,
         "unknownPersons": unknown_persons,
         "activeAlerts": active_incidents,
+        "activeIncidents": active_incidents,
+        "unacknowledgedAlerts": unacknowledged_alerts,
         "criticalAlerts": critical_alerts,
         "incidentsResolved": resolved_count,
         "avgResponseTimeSeconds": avg_response_time,
@@ -147,6 +161,46 @@ async def get_charts(current_user: dict = Depends(require_any)):
         {"camera": doc["_id"] or "Unknown", "count": doc["count"]} async for doc in cam_cursor
     ]
 
+    # Hourly 24-hour distribution
+    hourly_pipeline = [
+        {"$match": {"createdAt": {"$exists": True, "$type": "string"}}},
+        {"$project": {"hour": {"$substr": ["$createdAt", 11, 2]}}},
+        {"$group": {"_id": "$hour", "count": {"$sum": 1}}},
+    ]
+    hourly_counts = {}
+    try:
+        async for doc in db.incidents.aggregate(hourly_pipeline):
+            if doc["_id"]:
+                hourly_counts[doc["_id"]] = doc["count"]
+    except Exception:
+        pass
+
+    hourly_distribution = [
+        {"hour": f"{h:02d}:00", "count": hourly_counts.get(f"{h:02d}", 0)}
+        for h in range(24)
+    ]
+
+    # Camera incident distribution
+    cam_inc_pipeline = [
+        {"$group": {"_id": "$cameraId", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 8},
+    ]
+    camera_distribution = [
+        {"camera": doc["_id"] or "Unknown", "count": doc["count"]}
+        async for doc in db.incidents.aggregate(cam_inc_pipeline)
+    ]
+
+    # False alarm vs Genuine classification breakdown
+    fb_genuine = await db.feedback_logs.count_documents({"classification": "GENUINE"})
+    fb_false = await db.feedback_logs.count_documents({"classification": "FALSE_ALARM"})
+    fb_uncertain = await db.feedback_logs.count_documents({"classification": "UNCERTAIN"})
+    false_positive_trend = [
+        {"name": "Genuine", "count": fb_genuine},
+        {"name": "False Alarm", "count": fb_false},
+        {"name": "Uncertain", "count": fb_uncertain},
+    ]
+
     return {
         "alertsBySeverity": alerts_by_severity,
         "eventsOverTime": events_over_time,
@@ -156,4 +210,8 @@ async def get_charts(current_user: dict = Depends(require_any)):
         ],
         "vehicleDetections": vehicle_detections,
         "cameraActivity": camera_activity,
+        "hourlyDistribution": hourly_distribution,
+        "cameraDistribution": camera_distribution,
+        "falsePositiveTrend": false_positive_trend,
     }
+

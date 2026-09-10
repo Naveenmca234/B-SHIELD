@@ -1,5 +1,4 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from jose import JWTError
 
 from services.ws_manager import manager
 from services.auth_service import decode_token

@@ -1,4 +1,3 @@
-import pytest
 from ai.prediction import TrajectoryPredictor, _line_intersects_segment
 
 

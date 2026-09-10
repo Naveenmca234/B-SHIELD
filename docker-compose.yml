@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: bshield-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bshield-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+      - MONGODB_DB_NAME=ibvap
+      - JWT_SECRET=bshield_production_secret_key_9381729
+      - FRONTEND_URL=http://localhost
+      - ENVIRONMENT=production
+      - DETECTION_CONFIDENCE_THRESHOLD=0.5
+      - ALERT_COOLDOWN_SECONDS=20
+      - NOTIFICATION_ENABLED=false
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_snapshots:/app/snapshots
+      - ./backend/sample_videos:/app/sample_videos
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bshield-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:
+  backend_uploads:
+  backend_snapshots:

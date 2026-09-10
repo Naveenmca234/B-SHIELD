@@ -27,3 +27,8 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Runtime evidence / generated data
+backend/snapshots/
+snapshots/
+uploads/
